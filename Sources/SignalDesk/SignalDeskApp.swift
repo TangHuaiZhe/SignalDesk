@@ -5,6 +5,7 @@ struct SignalDeskApp: App {
     @StateObject private var store = SignalStore()
     @StateObject private var investorStore = InvestorHoldingsStore()
     @StateObject private var investorWritingStore = InvestorWritingStore()
+    @StateObject private var qdiiQuotaStore = QDIIQuotaStore()
     @StateObject private var fontScaleStore = SignalDeskFontScaleStore()
 
     var body: some Scene {
@@ -13,6 +14,7 @@ struct SignalDeskApp: App {
                 .environmentObject(store)
                 .environmentObject(investorStore)
                 .environmentObject(investorWritingStore)
+                .environmentObject(qdiiQuotaStore)
                 .environment(\.signalDeskFontScaleFactor, fontScaleStore.scale.factor)
                 .frame(minWidth: 1_040, minHeight: 680)
         }
@@ -20,7 +22,10 @@ struct SignalDeskApp: App {
         .commands {
             CommandGroup(after: .newItem) {
                 Button("刷新全部") {
-                    Task { await store.refresh() }
+                    Task {
+                        await store.refresh()
+                        await qdiiQuotaStore.refresh()
+                    }
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }

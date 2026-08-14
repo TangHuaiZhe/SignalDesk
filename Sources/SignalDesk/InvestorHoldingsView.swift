@@ -325,9 +325,24 @@ struct InvestorPortfolioView: View {
             }
         } else {
             HSplitView {
-                List(writings, selection: $selectedWritingID) { writing in
-                    WritingRow(writing: writing)
-                        .tag(writing.id)
+                List(selection: $selectedWritingID) {
+                    ForEach(writings) { writing in
+                        WritingRow(writing: writing)
+                            .tag(writing.id)
+                            .contextMenu {
+                                Button("删除材料", role: .destructive) {
+                                    writingStore.deleteWriting(id: writing.id, investorID: investor.id)
+                                    if selectedWritingID == writing.id { selectedWritingID = nil }
+                                }
+                            }
+                    }
+                    .onDelete { offsets in
+                        let ids = offsets.map { writings[$0].id }
+                        ids.forEach {
+                            writingStore.deleteWriting(id: $0, investorID: investor.id)
+                        }
+                        selectedWritingID = nil
+                    }
                 }
                 .listStyle(.inset)
                 .frame(minWidth: 270, idealWidth: 330, maxWidth: 390)
@@ -344,6 +359,11 @@ struct InvestorPortfolioView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onDeleteCommand {
+                guard let selectedWritingID else { return }
+                writingStore.deleteWriting(id: selectedWritingID, investorID: investor.id)
+                self.selectedWritingID = nil
+            }
             .onAppear {
                 if selectedWriting(in: writings) == nil {
                     selectedWritingID = writings.first?.id

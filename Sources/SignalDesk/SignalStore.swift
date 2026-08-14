@@ -6,6 +6,8 @@ import UserNotifications
 final class SignalStore: ObservableObject {
     @Published private(set) var sources: [TrackedSource] = []
     @Published private(set) var events: [SignalEvent] = []
+    @Published private(set) var stockWatchlist: [StockWatchlistItem] = []
+    @Published private(set) var stockUpdates: [StockUpdate] = []
     @Published private(set) var lastRefreshAt: Date?
     @Published private(set) var dailyBriefs: [DailyBrief] = []
     @Published var isGeneratingDailyBrief = false
@@ -13,6 +15,7 @@ final class SignalStore: ObservableObject {
     @Published var statusMessage: String?
 
     private let refreshCoordinator: RefreshCoordinator
+    private let stockRefreshCoordinator: StockRefreshCoordinator
     private let persistence: SignalStatePersistence
     private var installedCatalogIDs = Set<String>()
     private static let requestedPeopleCatalogID = "ai-robotics-longform-v4"
@@ -22,8 +25,13 @@ final class SignalStore: ObservableObject {
     private static let researchSourcesCatalogID = "research-sources-v1"
     private static let chinaEconomySourcesCatalogID = "china-economy-sources-v1"
 
-    init(stateURL: URL? = nil, refreshCoordinator: RefreshCoordinator = RefreshCoordinator()) {
+    init(
+        stateURL: URL? = nil,
+        refreshCoordinator: RefreshCoordinator = RefreshCoordinator(),
+        stockRefreshCoordinator: StockRefreshCoordinator = StockRefreshCoordinator()
+    ) {
         self.refreshCoordinator = refreshCoordinator
+        self.stockRefreshCoordinator = stockRefreshCoordinator
         self.persistence = SignalStatePersistence(url: stateURL)
         load()
         installRequestedPeopleIfNeeded()
@@ -41,6 +49,75 @@ final class SignalStore: ObservableObject {
     func add(_ source: TrackedSource) {
         sources.append(source)
         save()
+    }
+
+    @discardableResult
+    func addStock(symbol: String, name: String, market: String) -> Bool {
+        let normalizedSymbol = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let normalizedMarket = market.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let effectiveMarket = normalizedMarket.isEmpty ? "CN" : normalizedMarket
+        guard !normalizedSymbol.isEmpty else { return false }
+        guard !stockWatchlist.contains(where: {
+            $0.symbol.caseInsensitiveCompare(normalizedSymbol) == .orderedSame &&
+            $0.market.caseInsensitiveCompare(effectiveMarket) == .orderedSame
+        }) else { return false }
+
+        stockWatchlist.append(
+            StockWatchlistItem(
+                symbol: normalizedSymbol,
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                market: effectiveMarket
+            )
+        )
+        save()
+        return true
+    }
+
+    @discardableResult
+    func addStock(_ candidate: StockCandidate) -> Bool {
+        addStock(symbol: candidate.symbol, name: candidate.name, market: candidate.market)
+    }
+
+    func removeStocks(at offsets: IndexSet) {
+        let ids = offsets.map { stockWatchlist[$0].id }
+        stockWatchlist.remove(atOffsets: offsets)
+        stockUpdates.removeAll { ids.contains($0.stockID) }
+        save()
+    }
+
+    func toggleStock(_ stock: StockWatchlistItem) {
+        guard let index = stockWatchlist.firstIndex(where: { $0.id == stock.id }) else { return }
+        stockWatchlist[index].isEnabled.toggle()
+        save()
+    }
+
+    func markStockUpdateRead(_ id: String) {
+        guard let index = stockUpdates.firstIndex(where: { $0.id == id }) else { return }
+        stockUpdates[index].isRead = true
+        save()
+    }
+
+    func markAllStockUpdatesRead() {
+        for index in stockUpdates.indices {
+            stockUpdates[index].isRead = true
+        }
+        save()
+    }
+
+    func toggleStockUpdateBookmark(_ id: String) {
+        guard let index = stockUpdates.firstIndex(where: { $0.id == id }) else { return }
+        stockUpdates[index].isBookmarked.toggle()
+        save()
+    }
+
+    func deleteStockUpdates(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        stockUpdates.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func deleteStockUpdate(_ id: String) {
+        deleteStockUpdates([id])
     }
 
     @discardableResult
@@ -110,6 +187,22 @@ final class SignalStore: ObservableObject {
     func toggleBookmark(_ id: String) {
         guard let index = events.firstIndex(where: { $0.id == id }) else { return }
         events[index].isBookmarked.toggle()
+        save()
+    }
+
+    func deleteEvents(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        events.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func deleteEvent(_ id: String) {
+        deleteEvents([id])
+    }
+
+    func deleteDailyBrief(_ id: String) {
+        guard dailyBriefs.contains(where: { $0.id == id }) else { return }
+        dailyBriefs.removeAll { $0.id == id }
         save()
     }
 
@@ -223,11 +316,24 @@ final class SignalStore: ObservableObject {
         events = trimEvents(events)
         lastRefreshAt = result.refreshedAt
 
-        if result.failures.isEmpty {
-            statusMessage = result.addedEvents.isEmpty ? "已是最新" : "新增 \(result.addedEvents.count) 条信号"
+        let stockResult = await stockRefreshCoordinator.refresh(
+            watchlist: stockWatchlist,
+            existingUpdates: stockUpdates
+        )
+        for (stockID, checkedAt) in stockResult.checkedAtByStockID {
+            guard let index = stockWatchlist.firstIndex(where: { $0.id == stockID }) else { continue }
+            stockWatchlist[index].lastCheckedAt = checkedAt
+        }
+        stockUpdates.append(contentsOf: stockResult.addedUpdates)
+        stockUpdates = trimStockUpdates(stockUpdates)
+
+        let failures = result.failures + stockResult.failures
+        let addedCount = result.addedEvents.count + stockResult.addedUpdates.count
+        if failures.isEmpty {
+            statusMessage = addedCount == 0 ? "已是最新" : "新增 \(addedCount) 条信息"
         } else {
-            let firstFailure = result.failures.first.map { "；\($0)" } ?? ""
-            statusMessage = "新增 \(result.addedEvents.count) 条；\(result.failures.count) 个来源失败\(firstFailure)"
+            let firstFailure = failures.first.map { "；\($0)" } ?? ""
+            statusMessage = "新增 \(addedCount) 条；\(failures.count) 个来源失败\(firstFailure)"
         }
         save()
         await notify(for: result.addedEvents.filter { $0.importance >= 80 })
@@ -238,6 +344,9 @@ final class SignalStore: ObservableObject {
             let snapshot = try persistence.load()
             sources = snapshot.sources
             events = trimEvents(snapshot.events)
+            let migratedStocks = Self.migrateStockMarkets(snapshot.stockWatchlist ?? [])
+            stockWatchlist = migratedStocks
+            stockUpdates = trimStockUpdates(snapshot.stockUpdates ?? [])
             lastRefreshAt = snapshot.lastRefreshAt
             var briefs = snapshot.dailyBriefs ?? []
             if let legacyBrief = snapshot.dailyBrief,
@@ -246,6 +355,9 @@ final class SignalStore: ObservableObject {
             }
             dailyBriefs = briefs.sorted { $0.generatedAt > $1.generatedAt }
             installedCatalogIDs = Set(snapshot.installedCatalogIDs ?? [])
+            if migratedStocks != (snapshot.stockWatchlist ?? []) {
+                save()
+            }
         } catch {
             sources = TrackedSource.starterSources
             events = Self.welcomeEvents(for: sources)
@@ -261,7 +373,9 @@ final class SignalStore: ObservableObject {
                 lastRefreshAt: lastRefreshAt,
                 installedCatalogIDs: Array(installedCatalogIDs).sorted(),
                 dailyBrief: dailyBrief,
-                dailyBriefs: dailyBriefs
+                dailyBriefs: dailyBriefs,
+                stockWatchlist: stockWatchlist,
+                stockUpdates: stockUpdates
             )
             try persistence.save(snapshot)
         } catch {
@@ -315,6 +429,28 @@ final class SignalStore: ObservableObject {
         }.prefix(600)
         return (Array(xEvents) + Array(rssEvents) + Array(otherEvents))
             .sorted { $0.publishedAt > $1.publishedAt }
+    }
+
+    private func trimStockUpdates(_ candidates: [StockUpdate]) -> [StockUpdate] {
+        let sorted = candidates.sorted { $0.publishedAt > $1.publishedAt }
+        let stockIDs = Set(stockWatchlist.map(\.id))
+        return sorted
+            .filter { stockIDs.contains($0.stockID) }
+            .prefix(500)
+            .sorted { $0.publishedAt > $1.publishedAt }
+    }
+
+    private static func migrateStockMarkets(_ stocks: [StockWatchlistItem]) -> [StockWatchlistItem] {
+        stocks.map { stock in
+            guard stock.market.uppercased() == StockMarket.other.code,
+                  stock.symbol.allSatisfy(\.isNumber),
+                  stock.symbol.count <= 5 else {
+                return stock
+            }
+            var migrated = stock
+            migrated.market = StockMarket.hk.code
+            return migrated
+        }
     }
 
     private func installRequestedPeopleIfNeeded() {

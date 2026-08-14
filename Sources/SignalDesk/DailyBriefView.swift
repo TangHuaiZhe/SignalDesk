@@ -25,9 +25,22 @@ struct DailyBriefIndexView: View {
             } else {
                 Text("历史记录（\(store.dailyBriefs.count) 份）")
                     .scaledFont(.headline)
-                List(store.dailyBriefs, selection: $selection) { brief in
-                    DailyBriefRow(brief: brief)
-                        .tag(brief.id)
+                List(selection: $selection) {
+                    ForEach(store.dailyBriefs) { brief in
+                        DailyBriefRow(brief: brief)
+                            .tag(brief.id)
+                            .contextMenu {
+                                Button("删除快报", role: .destructive) {
+                                    store.deleteDailyBrief(brief.id)
+                                    if selection == brief.id { selection = nil }
+                                }
+                            }
+                    }
+                    .onDelete { offsets in
+                        let ids = offsets.map { store.dailyBriefs[$0].id }
+                        ids.forEach(store.deleteDailyBrief)
+                        selection = nil
+                    }
                 }
                 .listStyle(.inset)
                 .frame(maxHeight: .infinity)

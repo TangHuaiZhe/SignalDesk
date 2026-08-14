@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: SignalStore
     @EnvironmentObject private var investorStore: InvestorHoldingsStore
+    @EnvironmentObject private var qdiiQuotaStore: QDIIQuotaStore
     @Environment(\.openURL) private var openURL
     @State private var section: AppSection? = .inbox
     @State private var selection: String?
@@ -11,10 +12,14 @@ struct ContentView: View {
     @State private var category: SignalCategory?
     @State private var selectedTopic: SignalDomain?
     @State private var selectedSourceGroupKey: String?
-    @State private var expandedSourceSections: Set<AppSection> = [.inbox, .xFeed, .rssFeed, .chinaEconomy]
+    @State private var expandedSourceSections: Set<AppSection> = [.inbox, .xFeed, .rssFeed, .chinaEconomy, .stocks]
     @State private var selectedDailyBriefID: String?
     @State private var selectedInvestorID = InvestorPreset.featured.first?.id
     @State private var selectedInvestorTab = InvestorPageTab.investors
+    @State private var showingAddStock = false
+    @State private var selectedStockID: UUID?
+    @State private var showingAddQDII = false
+    @State private var selectedQDIIID: String?
 
     var body: some View {
         NavigationSplitView {
@@ -31,6 +36,14 @@ struct ContentView: View {
                 )
             } else if section == .settings {
                 SettingsView()
+            } else if section == .stocks {
+                StockTimelineView(
+                    selectedStockID: $selectedStockID,
+                    selection: $selection,
+                    showingAddStock: $showingAddStock
+                )
+            } else if section == .qdiiQuotas {
+                QDIIQuotaView(selection: $selectedQDIIID, showingAddFund: $showingAddQDII)
             } else {
                 timeline
             }
@@ -38,8 +51,17 @@ struct ContentView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
+        .onDeleteCommand {
+            deleteSelectedInformation()
+        }
         .sheet(isPresented: $showingAddSource) {
             AddSourceView()
+        }
+        .sheet(isPresented: $showingAddStock) {
+            AddStockView()
+        }
+        .sheet(isPresented: $showingAddQDII) {
+            AddQDIIQuotaView()
         }
         .onReceive(NotificationCenter.default.publisher(for: .signalDeskOpenSettings)) { _ in
             section = .settings
@@ -49,11 +71,13 @@ struct ContentView: View {
         }
         .task {
             await store.refresh()
+            await qdiiQuotaStore.refreshIfStale()
             await store.generateDailyBriefIfNeeded()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(secondsUntilNextBriefCheck()))
                 guard !Task.isCancelled else { break }
                 await store.refresh()
+                await qdiiQuotaStore.refreshIfStale()
                 await store.generateDailyBriefIfNeeded()
             }
         }
@@ -113,6 +137,41 @@ struct ContentView: View {
                                 ? Color.accentColor.opacity(0.15)
                                 : Color.clear
                         )
+                    } else if item == .stocks {
+                        HStack(spacing: 4) {
+                            Button {
+                                toggleSourceSection(item)
+                            } label: {
+                                Image(systemName: expandedSourceSections.contains(item) ? "chevron.down" : "chevron.right")
+                                    .scaledFont(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14, height: 24)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(
+                                expandedSourceSections.contains(item) ? "收起(item.title)" : "展开(item.title)"
+                            )
+
+                            Button {
+                                selectSection(item)
+                            } label: {
+                                sectionLabel(item)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .listRowBackground(
+                            section == item && selectedStockID == nil
+                                ? Color.accentColor.opacity(0.15)
+                                : Color.clear
+                        )
+                    } else if item == .qdiiQuotas {
+                        Button {
+                            selectSection(item)
+                        } label: {
+                            sectionLabel(item)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(section == item ? Color.accentColor.opacity(0.15) : Color.clear)
                     } else {
                         Label {
                             HStack {
@@ -161,6 +220,39 @@ struct ContentView: View {
                             )
                         }
                     }
+
+                    if item == .stocks && expandedSourceSections.contains(item) {
+                        ForEach(store.stockWatchlist) { stock in
+                            Button {
+                                selectStock(stock)
+                            } label: {
+                                HStack(spacing: 7) {
+                                    Circle()
+                                        .fill(stock.isEnabled ? Color.blue : Color.secondary)
+                                        .frame(width: 6, height: 6)
+                                    Text(stock.displayName)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    let unread = store.stockUpdates.filter {
+                                        $0.stockID == stock.id && !$0.isRead
+                                    }.count
+                                    if unread > 0 {
+                                        Text("\(unread)")
+                                            .scaledFont(.caption2.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 23)
+                            .listRowBackground(
+                                section == .stocks && selectedStockID == stock.id
+                                    ? Color.accentColor.opacity(0.12)
+                                    : Color.clear
+                            )
+                        }
+                    }
                 }
             }
 
@@ -173,9 +265,18 @@ struct ContentView: View {
         .navigationSplitViewColumnWidth(min: 210, ideal: 235, max: 280)
         .safeAreaInset(edge: .bottom) {
             Button {
-                showingAddSource = true
+                if section == .stocks {
+                    showingAddStock = true
+                } else if section == .qdiiQuotas {
+                    showingAddQDII = true
+                } else {
+                    showingAddSource = true
+                }
             } label: {
-                Label("添加监控对象", systemImage: "plus")
+                Label(
+                    section == .stocks ? "添加股票" : (section == .qdiiQuotas ? "添加基金" : "添加监控对象"),
+                    systemImage: "plus"
+                )
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -216,8 +317,14 @@ struct ContentView: View {
                     description: Text("添加来源或调整筛选条件后刷新。")
                 )
             } else {
-                List(filteredEvents, selection: $selection) { event in
-                    eventRow(event)
+                List(selection: $selection) {
+                    ForEach(filteredEvents) { event in
+                        eventRow(event)
+                    }
+                    .onDelete { offsets in
+                        store.deleteEvents(offsets.map { filteredEvents[$0].id })
+                        selection = nil
+                    }
                 }
                 .listStyle(.inset)
             }
@@ -295,6 +402,27 @@ struct ContentView: View {
             }
         } else if section == .dailyBrief {
             DailyBriefView(selection: $selectedDailyBriefID)
+        } else if section == .stocks {
+            if let update = selectedStockUpdate {
+                StockUpdateDetail(update: update)
+                    .onChange(of: update.id, initial: true) { _, updateID in
+                        store.markStockUpdateRead(updateID)
+                    }
+            } else {
+                ZStack {
+                    Color(nsColor: .controlBackgroundColor)
+                    ContentUnavailableView(
+                        "选择一条股票信息",
+                        systemImage: "chart.line.uptrend.xyaxis",
+                        description: Text("从基本面、新闻或重要公告中选择一条信息查看详情。")
+                    )
+                }
+            }
+        } else if section == .qdiiQuotas {
+            QDIIQuotaDetail(
+                observation: selectedQDIIID.flatMap { qdiiQuotaStore.observation(for: $0) },
+                changes: qdiiQuotaStore.changes.filter { $0.fundCode == selectedQDIIID }
+            )
         } else if let event = selectedEvent {
             EventDetail(event: event)
                 .onChange(of: event.id, initial: true) { _, eventID in
@@ -315,6 +443,11 @@ struct ContentView: View {
     private var selectedEvent: SignalEvent? {
         guard let selection else { return nil }
         return store.events.first { $0.id == selection }
+    }
+
+    private var selectedStockUpdate: StockUpdate? {
+        guard let selection else { return nil }
+        return store.stockUpdates.first { $0.id == selection }
     }
 
     private var filteredEvents: [SignalEvent] {
@@ -415,6 +548,21 @@ struct ContentView: View {
 
     private func selectSection(_ section: AppSection) {
         self.section = section
+        if section == .stocks,
+           selectedStockID == nil || !store.stockWatchlist.contains(where: { $0.id == selectedStockID }) {
+            selectedStockID = store.stockWatchlist.first?.id
+        }
+        if section == .qdiiQuotas,
+           selectedQDIIID == nil || !qdiiQuotaStore.watchlist.contains(where: { $0.fundCode == selectedQDIIID }) {
+            selectedQDIIID = qdiiQuotaStore.watchlist.first?.fundCode
+        }
+        selectedSourceGroupKey = nil
+        selection = nil
+    }
+
+    private func selectStock(_ stock: StockWatchlistItem) {
+        section = .stocks
+        selectedStockID = stock.id
         selectedSourceGroupKey = nil
         selection = nil
     }
@@ -470,10 +618,37 @@ struct ContentView: View {
                 Button(event.isBookmarked ? "取消收藏" : "收藏") {
                     store.toggleBookmark(event.id)
                 }
+                Button("删除信息", role: .destructive) {
+                    store.deleteEvent(event.id)
+                    if selection == event.id { selection = nil }
+                }
                 if let rawURL = event.url, let url = URL(string: rawURL) {
                     Button("打开原文") { openURL(url) }
                 }
             }
+    }
+
+    private func deleteSelectedInformation() {
+        switch section {
+        case .stocks:
+            guard let selection else { return }
+            store.deleteStockUpdate(selection)
+            self.selection = nil
+        case .qdiiQuotas:
+            guard let selectedQDIIID else { return }
+            qdiiQuotaStore.removeFund(selectedQDIIID)
+            self.selectedQDIIID = nil
+        case .dailyBrief:
+            guard let selectedDailyBriefID else { return }
+            store.deleteDailyBrief(selectedDailyBriefID)
+            self.selectedDailyBriefID = nil
+        case .inbox, .xFeed, .rssFeed, .chinaEconomy, .highValue, .bookmarks:
+            guard let selection else { return }
+            store.deleteEvent(selection)
+            self.selection = nil
+        default:
+            break
+        }
     }
 
     private func badgeCount(for item: AppSection) -> Int? {
@@ -485,6 +660,10 @@ struct ContentView: View {
             store.events.filter { rssSourceIDs.contains($0.sourceID) && !$0.isRead }.count
         case .chinaEconomy:
             store.events.filter { chinaEconomySourceIDs.contains($0.sourceID) && !$0.isRead }.count
+        case .stocks:
+            store.stockUpdates.filter { !$0.isRead }.count
+        case .qdiiQuotas:
+            qdiiQuotaStore.changes.count
         case .highValue: store.highValueCount
         case .bookmarks: store.events.filter(\.isBookmarked).count
         case .dailyBrief: nil

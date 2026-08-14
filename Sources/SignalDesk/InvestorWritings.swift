@@ -365,6 +365,7 @@ final class InvestorWritingStore: ObservableObject {
 
     private let stateURL: URL
     private let client = InvestorWritingClient()
+    private var deletedWritingIDs = Set<String>()
 
     init(stateURL: URL? = nil) {
         self.stateURL = stateURL ?? Self.defaultStateURL
@@ -378,6 +379,13 @@ final class InvestorWritingStore: ObservableObject {
 
     func writing(id: String, investorID: String) -> InvestorWriting? {
         writings(for: investorID).first { $0.id == id }
+    }
+
+    func deleteWriting(id: String, investorID: String) {
+        guard writingsByInvestor[investorID]?.contains(where: { $0.id == id }) == true else { return }
+        writingsByInvestor[investorID]?.removeAll { $0.id == id }
+        deletedWritingIDs.insert(id)
+        save()
     }
 
     func refresh(_ investor: InvestorPreset) async {
@@ -438,6 +446,7 @@ final class InvestorWritingStore: ObservableObject {
     private func installCuratedWritings() {
         for investor in InvestorPreset.featured {
             let curated = InvestorWritingCatalog.curated(for: investor.id)
+                .filter { !deletedWritingIDs.contains($0.id) }
             guard !curated.isEmpty else { continue }
             let existing: [InvestorWriting]
             if investor.id == "warren-buffett" {
@@ -459,10 +468,10 @@ final class InvestorWritingStore: ObservableObject {
         with existing: [InvestorWriting]
     ) -> [InvestorWriting] {
         var byID = Dictionary(
-            existing.map { ($0.id, $0) },
+            existing.filter { !deletedWritingIDs.contains($0.id) }.map { ($0.id, $0) },
             uniquingKeysWith: { _, latest in latest }
         )
-        for writing in incoming {
+        for writing in incoming where !deletedWritingIDs.contains(writing.id) {
             var merged = writing
             merged.aiSummary = merged.aiSummary ?? byID[writing.id]?.aiSummary
             merged.aiTranslation = merged.aiTranslation ?? byID[writing.id]?.aiTranslation
@@ -483,6 +492,7 @@ final class InvestorWritingStore: ObservableObject {
             grouping: cache.writings,
             by: \.investorID
         )
+        deletedWritingIDs = Set(cache.deletedWritingIDs ?? [])
         lastRefreshedAt = cache.lastRefreshedAt
     }
 
@@ -496,7 +506,8 @@ final class InvestorWritingStore: ObservableObject {
                 writings: writingsByInvestor.values
                     .flatMap { $0 }
                     .sorted { $0.publishedAt > $1.publishedAt },
-                lastRefreshedAt: lastRefreshedAt
+                lastRefreshedAt: lastRefreshedAt,
+                deletedWritingIDs: Array(deletedWritingIDs).sorted()
             )
             let data = try JSONEncoder.investorWritings.encode(cache)
             try data.write(to: stateURL, options: .atomic)
@@ -515,6 +526,7 @@ final class InvestorWritingStore: ObservableObject {
 private struct InvestorWritingCache: Codable {
     var writings: [InvestorWriting]
     var lastRefreshedAt: Date?
+    var deletedWritingIDs: [String]? = nil
 }
 
 private extension JSONEncoder {

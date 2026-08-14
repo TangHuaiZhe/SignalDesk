@@ -128,6 +128,99 @@ struct SignalEvent: Identifiable, Codable, Hashable {
     var aiTranslation: AITranslation? = nil
 }
 
+enum StockInfoKind: String, Codable, CaseIterable, Identifiable {
+    case fundamentals
+    case news
+    case announcements
+    case deepReports
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .fundamentals: "基本面"
+        case .news: "新闻"
+        case .announcements: "重要公告"
+        case .deepReports: "深度研报"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .fundamentals: "chart.bar.xaxis"
+        case .news: "newspaper.fill"
+        case .announcements: "megaphone.fill"
+        case .deepReports: "doc.text.magnifyingglass"
+        }
+    }
+}
+
+enum StockMarket: String, CaseIterable, Identifiable {
+    case cn
+    case hk
+    case us
+    case other
+
+    var id: String { rawValue }
+
+    var code: String { rawValue.uppercased() }
+
+    var title: String {
+        switch self {
+        case .cn: "中国 A 股"
+        case .hk: "香港市场"
+        case .us: "美国市场"
+        case .other: "其他"
+        }
+    }
+}
+
+struct StockCandidate: Identifiable, Hashable {
+    var symbol: String
+    var name: String
+    var market: String
+    var exchange: String
+
+    var id: String { "\(market)|\(symbol)" }
+
+    var displayName: String {
+        name.isEmpty ? symbol : "\(name)（\(symbol)）"
+    }
+
+    var marketTitle: String {
+        StockMarket(rawValue: market.lowercased())?.title ?? market
+    }
+}
+
+struct StockWatchlistItem: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var symbol: String
+    var name: String
+    var market: String
+    var isEnabled = true
+    var lastCheckedAt: Date?
+
+    var displayName: String {
+        name.isEmpty ? symbol : "\(name)（\(symbol)）"
+    }
+}
+
+struct StockUpdate: Identifiable, Codable, Hashable {
+    var id: String
+    var stockID: UUID
+    var symbol: String
+    var stockName: String
+    var kind: StockInfoKind
+    var title: String
+    var summary: String
+    var url: String?
+    var publishedAt: Date
+    var importance: Int
+    var pageCount: Int? = nil
+    var isRead = false
+    var isBookmarked = false
+}
+
 struct AISummary: Codable, Hashable {
     var content: String
     var provider: AISummaryProvider
@@ -181,7 +274,7 @@ enum AISummaryMode: String, CaseIterable, Identifiable {
 }
 
 struct AppSnapshot: Codable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
     var sources: [TrackedSource]
@@ -190,6 +283,8 @@ struct AppSnapshot: Codable {
     var installedCatalogIDs: [String]? = nil
     var dailyBrief: DailyBrief? = nil
     var dailyBriefs: [DailyBrief]? = nil
+    var stockWatchlist: [StockWatchlistItem]? = nil
+    var stockUpdates: [StockUpdate]? = nil
 
     init(
         schemaVersion: Int = AppSnapshot.currentSchemaVersion,
@@ -198,7 +293,9 @@ struct AppSnapshot: Codable {
         lastRefreshAt: Date?,
         installedCatalogIDs: [String]? = nil,
         dailyBrief: DailyBrief? = nil,
-        dailyBriefs: [DailyBrief]? = nil
+        dailyBriefs: [DailyBrief]? = nil,
+        stockWatchlist: [StockWatchlistItem]? = nil,
+        stockUpdates: [StockUpdate]? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.sources = sources
@@ -207,6 +304,8 @@ struct AppSnapshot: Codable {
         self.installedCatalogIDs = installedCatalogIDs
         self.dailyBrief = dailyBrief
         self.dailyBriefs = dailyBriefs
+        self.stockWatchlist = stockWatchlist
+        self.stockUpdates = stockUpdates
     }
 
     init(from decoder: Decoder) throws {
@@ -219,6 +318,8 @@ struct AppSnapshot: Codable {
         installedCatalogIDs = try container.decodeIfPresent([String].self, forKey: .installedCatalogIDs)
         dailyBrief = try container.decodeIfPresent(DailyBrief.self, forKey: .dailyBrief)
         dailyBriefs = try container.decodeIfPresent([DailyBrief].self, forKey: .dailyBriefs)
+        stockWatchlist = try container.decodeIfPresent([StockWatchlistItem].self, forKey: .stockWatchlist)
+        stockUpdates = try container.decodeIfPresent([StockUpdate].self, forKey: .stockUpdates)
     }
 }
 
@@ -227,6 +328,8 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case xFeed
     case rssFeed
     case chinaEconomy
+    case stocks
+    case qdiiQuotas
     case highValue
     case bookmarks
     case dailyBrief
@@ -242,6 +345,8 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .xFeed: "X 情报"
         case .rssFeed: "RSS"
         case .chinaEconomy: "海外看中国"
+        case .stocks: "自选股信息"
+        case .qdiiQuotas: "QDII 基金额度"
         case .highValue: "高价值"
         case .bookmarks: "已收藏"
         case .dailyBrief: "每日快报"
@@ -257,6 +362,8 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .xFeed: "at.circle.fill"
         case .rssFeed: "dot.radiowaves.left.and.right"
         case .chinaEconomy: "globe.asia.australia.fill"
+        case .stocks: "chart.line.uptrend.xyaxis"
+        case .qdiiQuotas: "chart.bar.doc.horizontal"
         case .highValue: "sparkles"
         case .bookmarks: "bookmark.fill"
         case .dailyBrief: "newspaper.fill"

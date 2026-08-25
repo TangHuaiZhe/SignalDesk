@@ -9,16 +9,22 @@ struct XBloggerCatalogTests {
         #expect(AppSection.xFeed.icon == "at.circle.fill")
     }
 
-    @Test func exposesDedicatedRSSFeedSection() {
-        #expect(AppSection.allCases.contains(.rssFeed))
-        #expect(AppSection.rssFeed.title == "RSS")
-        #expect(AppSection.rssFeed.icon == "dot.radiowaves.left.and.right")
+    @Test func exposesDedicatedLongFormSection() {
+        #expect(AppSection.allCases.contains(.longForm))
+        #expect(AppSection.longForm.title == "长篇信息")
+        #expect(AppSection.longForm.icon == "doc.text.fill")
     }
 
     @Test func exposesDedicatedChinaEconomySection() {
         #expect(AppSection.allCases.contains(.chinaEconomy))
         #expect(AppSection.chinaEconomy.title == "海外看中国")
         #expect(AppSection.chinaEconomy.icon == "globe.asia.australia.fill")
+    }
+
+    @Test func exposesDedicatedMagazineSection() {
+        #expect(AppSection.allCases.contains(.magazines))
+        #expect(AppSection.magazines.title == "英语杂志")
+        #expect(AppSection.magazines.icon == "books.vertical.fill")
     }
 
     @Test func catalogHasUniqueAccountsAndBalancedRecommendations() {

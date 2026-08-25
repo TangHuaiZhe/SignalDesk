@@ -14,13 +14,14 @@ struct SignalStoreMigrationTests {
         let firstKeys = Set(first.sources.map { "\($0.sourceKind.rawValue)|\($0.feedURL.lowercased())" })
         let second = SignalStore(stateURL: stateURL)
 
-        #expect(first.sources.count == 35)
+        #expect(first.sources.count == 39)
         #expect(firstKeys.count == first.sources.count)
         #expect(first.sources.filter { $0.sourceKind == .x }.isEmpty)
         #expect(first.sources.filter { $0.sourceKind == .mediaSearch }.count == 12)
         #expect(first.sources.filter { $0.name.contains("李飞飞 / Fei-Fei Li · a16z") }.count == 1)
         #expect(first.sources.filter { $0.name.contains("SemiAnalysis") }.count == 1)
         #expect(first.sources.filter { $0.channel == .chinaEconomy }.count == 6)
+        #expect(first.sources.filter { $0.channel == .magazines }.count == 4)
         #expect(second.sources.count == first.sources.count)
     }
 

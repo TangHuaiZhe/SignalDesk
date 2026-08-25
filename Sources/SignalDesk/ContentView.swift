@@ -5,14 +5,15 @@ struct ContentView: View {
     @EnvironmentObject private var investorStore: InvestorHoldingsStore
     @EnvironmentObject private var qdiiQuotaStore: QDIIQuotaStore
     @Environment(\.openURL) private var openURL
-    @State private var section: AppSection? = .inbox
+    @State private var section: AppSection? = .longForm
     @State private var selection: String?
     @State private var showingAddSource = false
     @State private var query = ""
     @State private var category: SignalCategory?
+    @State private var sortOptions: [AppSection: SignalSortOption] = [:]
     @State private var selectedTopic: SignalDomain?
     @State private var selectedSourceGroupKey: String?
-    @State private var expandedSourceSections: Set<AppSection> = [.inbox, .xFeed, .rssFeed, .chinaEconomy, .stocks]
+    @State private var expandedSourceSections: Set<AppSection> = []
     @State private var selectedDailyBriefID: String?
     @State private var selectedInvestorID = InvestorPreset.featured.first?.id
     @State private var selectedInvestorTab = InvestorPageTab.investors
@@ -107,7 +108,7 @@ struct ContentView: View {
                     .listRowInsets(EdgeInsets(top: 16, leading: 10, bottom: 20, trailing: 8))
             }
 
-            Section("监控") {
+            Section {
                 ForEach(AppSection.allCases) { item in
                     if isSourceSection(item) {
                         HStack(spacing: 4) {
@@ -254,6 +255,21 @@ struct ContentView: View {
                         }
                     }
                 }
+            } header: {
+                HStack {
+                    Text("监控")
+                    Spacer()
+                    Button {
+                        toggleAllSourceSections()
+                    } label: {
+                        Image(systemName: allSourceSectionsExpanded ? "chevron.up.2" : "chevron.down.2")
+                            .scaledFont(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(allSourceSectionsExpanded ? "收起所有 tab" : "展开所有 tab")
+                    .accessibilityLabel(allSourceSectionsExpanded ? "收起所有 tab" : "展开所有 tab")
+                }
             }
 
             Section("主题") {
@@ -381,6 +397,16 @@ struct ContentView: View {
                 }
                 .labelsHidden()
                 .frame(width: 110)
+                Divider().frame(height: 18)
+                Text("排序")
+                    .foregroundStyle(.secondary)
+                Picker("排序", selection: sortBinding(for: section ?? .longForm)) {
+                    ForEach(SignalSortOption.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 110)
             }
             .padding(.horizontal, 11)
             .frame(height: 38)
@@ -419,10 +445,18 @@ struct ContentView: View {
                 }
             }
         } else if section == .qdiiQuotas {
-            QDIIQuotaDetail(
-                observation: selectedQDIIID.flatMap { qdiiQuotaStore.observation(for: $0) },
-                changes: qdiiQuotaStore.changes.filter { $0.fundCode == selectedQDIIID }
-            )
+            if let selectedQDIIID,
+               let item = qdiiQuotaStore.watchlist.first(where: { $0.fundCode == selectedQDIIID }),
+               item.market == .exchangeTraded {
+                QDIIExchangeDetail(observation: qdiiQuotaStore.exchangeObservation(for: selectedQDIIID))
+            } else {
+                QDIIQuotaDetail(
+                    tiantianObservation: selectedQDIIID.flatMap { qdiiQuotaStore.observation(for: $0, channel: .tiantian) },
+                    directObservation: selectedQDIIID.flatMap { qdiiQuotaStore.observation(for: $0, channel: .direct) },
+                    xueqiuObservation: selectedQDIIID.flatMap { qdiiQuotaStore.observation(for: $0, channel: .xueqiu) },
+                    changes: qdiiQuotaStore.changes.filter { $0.fundCode == selectedQDIIID }
+                )
+            }
         } else if let event = selectedEvent {
             EventDetail(event: event)
                 .onChange(of: event.id, initial: true) { _, eventID in
@@ -451,19 +485,20 @@ struct ContentView: View {
     }
 
     private var filteredEvents: [SignalEvent] {
-        store.events.filter { event in
+        let filtered = store.events.filter { event in
             let sectionMatches: Bool
             switch section {
-            case .inbox:
-                sectionMatches = selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID)
             case .xFeed:
                 sectionMatches = xSourceIDs.contains(event.sourceID) &&
                     (selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID))
-            case .rssFeed:
-                sectionMatches = rssSourceIDs.contains(event.sourceID) &&
+            case .longForm:
+                sectionMatches = longFormSourceIDs.contains(event.sourceID) &&
                     (selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID))
             case .chinaEconomy:
                 sectionMatches = chinaEconomySourceIDs.contains(event.sourceID) &&
+                    (selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID))
+            case .magazines:
+                sectionMatches = magazineSourceIDs.contains(event.sourceID) &&
                     (selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID))
             case .highValue: sectionMatches = event.importance >= 75
             case .bookmarks: sectionMatches = event.isBookmarked
@@ -476,6 +511,14 @@ struct ContentView: View {
                 .localizedCaseInsensitiveContains(query)
             return sectionMatches && categoryMatches && topicMatches && queryMatches
         }
+        return sortOptions[section ?? .longForm, default: .updatedAt].sorted(filtered)
+    }
+
+    private func sortBinding(for section: AppSection) -> Binding<SignalSortOption> {
+        Binding(
+            get: { sortOptions[section, default: .updatedAt] },
+            set: { sortOptions[section] = $0 }
+        )
     }
 
     private var refreshSubtitle: String {
@@ -483,10 +526,12 @@ struct ContentView: View {
         switch section {
         case .xFeed:
             activeSourceCount = store.sources.filter { $0.sourceKind == .x && $0.isEnabled }.count
-        case .rssFeed:
-            activeSourceCount = store.sources.filter { $0.sourceKind == .rss && $0.isEnabled }.count
+        case .longForm:
+            activeSourceCount = store.sources.filter { $0.sourceKind != .x && $0.isEnabled }.count
         case .chinaEconomy:
             activeSourceCount = store.sources.filter { $0.channel == .chinaEconomy && $0.isEnabled }.count
+        case .magazines:
+            activeSourceCount = store.sources.filter { $0.channel == .magazines && $0.isEnabled }.count
         default:
             activeSourceCount = store.sources.filter(\.isEnabled).count
         }
@@ -500,37 +545,43 @@ struct ContentView: View {
         Set(store.sources.filter { $0.sourceKind == .x }.map(\.id))
     }
 
-    private var rssSourceIDs: Set<UUID> {
-        Set(store.sources.filter { $0.sourceKind == .rss }.map(\.id))
+    private var longFormSourceIDs: Set<UUID> {
+        Set(store.sources.filter { $0.sourceKind != .x }.map(\.id))
     }
 
     private var chinaEconomySourceIDs: Set<UUID> {
         Set(store.sources.filter { $0.channel == .chinaEconomy }.map(\.id))
     }
 
+    private var magazineSourceIDs: Set<UUID> {
+        Set(store.sources.filter { $0.channel == .magazines }.map(\.id))
+    }
+
     private var selectedSourceName: String? {
         guard let selectedSourceGroupKey else { return nil }
-        return sourceGroups(for: section ?? .inbox)
+        return sourceGroups(for: section ?? .longForm)
             .first(where: { $0.key == selectedSourceGroupKey })?.title
             ?? selectedSourceGroupKey
     }
 
     private func isSourceSection(_ section: AppSection) -> Bool {
-        section == .inbox || section == .xFeed || section == .rssFeed || section == .chinaEconomy
+        section == .xFeed || section == .longForm || section == .chinaEconomy || section == .magazines
     }
 
     private func sourceGroups(for section: AppSection) -> [SourceGroup] {
-        let kind: SourceKind?
-        let channel: SourceChannel?
+        let filteredSources: [TrackedSource]
         switch section {
-        case .inbox: kind = nil; channel = nil
-        case .xFeed: kind = .x; channel = nil
-        case .rssFeed: kind = .rss; channel = nil
-        case .chinaEconomy: kind = nil; channel = .chinaEconomy
-        default: kind = nil; channel = nil
+        case .xFeed:
+            filteredSources = store.sources.filter { $0.sourceKind == .x }
+        case .longForm:
+            filteredSources = store.sources.filter { $0.sourceKind != .x }
+        case .chinaEconomy:
+            filteredSources = store.sources.filter { $0.channel == .chinaEconomy }
+        case .magazines:
+            filteredSources = store.sources.filter { $0.channel == .magazines }
+        default:
+            filteredSources = []
         }
-        let filteredSources = store.sources
-            .filter { (kind == nil || $0.sourceKind == kind) && (channel == nil || $0.channel == channel) }
         let grouped = Dictionary(grouping: filteredSources, by: \.groupKey)
         return grouped.map { key, sources in
             SourceGroup(
@@ -579,6 +630,22 @@ struct ContentView: View {
         } else {
             expandedSourceSections.insert(section)
         }
+    }
+
+    private var expandableSourceSections: Set<AppSection> {
+        Set(AppSection.allCases.filter(isExpandableSourceSection))
+    }
+
+    private var allSourceSectionsExpanded: Bool {
+        expandedSourceSections == expandableSourceSections
+    }
+
+    private func isExpandableSourceSection(_ section: AppSection) -> Bool {
+        isSourceSection(section) || section == .stocks
+    }
+
+    private func toggleAllSourceSections() {
+        expandedSourceSections = allSourceSectionsExpanded ? [] : expandableSourceSections
     }
 
     private func unreadCount(for group: SourceGroup) -> Int {
@@ -642,7 +709,7 @@ struct ContentView: View {
             guard let selectedDailyBriefID else { return }
             store.deleteDailyBrief(selectedDailyBriefID)
             self.selectedDailyBriefID = nil
-        case .inbox, .xFeed, .rssFeed, .chinaEconomy, .highValue, .bookmarks:
+        case .xFeed, .longForm, .chinaEconomy, .magazines, .highValue, .bookmarks:
             guard let selection else { return }
             store.deleteEvent(selection)
             self.selection = nil
@@ -653,13 +720,14 @@ struct ContentView: View {
 
     private func badgeCount(for item: AppSection) -> Int? {
         switch item {
-        case .inbox: store.unreadCount
         case .xFeed:
             store.events.filter { xSourceIDs.contains($0.sourceID) && !$0.isRead }.count
-        case .rssFeed:
-            store.events.filter { rssSourceIDs.contains($0.sourceID) && !$0.isRead }.count
+        case .longForm:
+            store.events.filter { longFormSourceIDs.contains($0.sourceID) && !$0.isRead }.count
         case .chinaEconomy:
             store.events.filter { chinaEconomySourceIDs.contains($0.sourceID) && !$0.isRead }.count
+        case .magazines:
+            store.events.filter { magazineSourceIDs.contains($0.sourceID) && !$0.isRead }.count
         case .stocks:
             store.stockUpdates.filter { !$0.isRead }.count
         case .qdiiQuotas:
@@ -676,7 +744,7 @@ struct ContentView: View {
     private func topicRow(_ domain: SignalDomain) -> some View {
         Button {
             selectedTopic = selectedTopic == domain ? nil : domain
-            section = .inbox
+            section = .longForm
             selectedSourceGroupKey = nil
             selection = nil
         } label: {

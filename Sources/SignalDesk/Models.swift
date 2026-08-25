@@ -73,6 +73,7 @@ enum SignalDomain: String, Codable, CaseIterable, Identifiable {
 
 enum SourceChannel: String, Codable, CaseIterable, Identifiable {
     case chinaEconomy
+    case magazines
 
     var id: String { rawValue }
 }
@@ -126,6 +127,34 @@ struct SignalEvent: Identifiable, Codable, Hashable {
     var isBookmarked = false
     var aiSummary: AISummary?
     var aiTranslation: AITranslation? = nil
+}
+
+enum SignalSortOption: String, CaseIterable, Identifiable {
+    case updatedAt
+    case importance
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .updatedAt: "更新时间"
+        case .importance: "价值分数"
+        }
+    }
+
+    func sorted(_ events: [SignalEvent]) -> [SignalEvent] {
+        events.sorted { lhs, rhs in
+            switch self {
+            case .updatedAt:
+                if lhs.publishedAt != rhs.publishedAt { return lhs.publishedAt > rhs.publishedAt }
+                if lhs.importance != rhs.importance { return lhs.importance > rhs.importance }
+            case .importance:
+                if lhs.importance != rhs.importance { return lhs.importance > rhs.importance }
+                if lhs.publishedAt != rhs.publishedAt { return lhs.publishedAt > rhs.publishedAt }
+            }
+            return lhs.id < rhs.id
+        }
+    }
 }
 
 enum StockInfoKind: String, Codable, CaseIterable, Identifiable {
@@ -324,10 +353,10 @@ struct AppSnapshot: Codable {
 }
 
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case inbox
     case xFeed
-    case rssFeed
+    case longForm
     case chinaEconomy
+    case magazines
     case stocks
     case qdiiQuotas
     case highValue
@@ -341,10 +370,10 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .inbox: "情报流"
         case .xFeed: "X 情报"
-        case .rssFeed: "RSS"
+        case .longForm: "长篇信息"
         case .chinaEconomy: "海外看中国"
+        case .magazines: "英语杂志"
         case .stocks: "自选股信息"
         case .qdiiQuotas: "QDII 基金额度"
         case .highValue: "高价值"
@@ -358,10 +387,10 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var icon: String {
         switch self {
-        case .inbox: "rectangle.stack.fill"
         case .xFeed: "at.circle.fill"
-        case .rssFeed: "dot.radiowaves.left.and.right"
+        case .longForm: "doc.text.fill"
         case .chinaEconomy: "globe.asia.australia.fill"
+        case .magazines: "books.vertical.fill"
         case .stocks: "chart.line.uptrend.xyaxis"
         case .qdiiQuotas: "chart.bar.doc.horizontal"
         case .highValue: "sparkles"

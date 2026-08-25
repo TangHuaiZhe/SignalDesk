@@ -36,6 +36,20 @@ struct CuratedSourceCatalogTests {
         #expect(sources.allSatisfy { $0.feedURL.contains("news.google.com/rss/search") })
     }
 
+    @Test func containsDedicatedMagazineSources() {
+        let sources = CuratedSourcePreset.magazineSources.map { $0.trackedSource() }
+        let paths = Set(sources.map(\.feedURL))
+
+        #expect(sources.count == 4)
+        #expect(paths.count == sources.count)
+        #expect(sources.allSatisfy { $0.channel == .magazines })
+        #expect(sources.allSatisfy { $0.sourceKind == .rss })
+        #expect(paths.contains("https://github.com/hehonghui/awesome-english-ebooks/commits/master/01_economist.atom"))
+        #expect(paths.contains("https://github.com/hehonghui/awesome-english-ebooks/commits/master/02_new_yorker.atom"))
+        #expect(paths.contains("https://github.com/hehonghui/awesome-english-ebooks/commits/master/04_atlantic.atom"))
+        #expect(paths.contains("https://github.com/hehonghui/awesome-english-ebooks/commits/master/05_wired.atom"))
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TRACKAI_LIVE_CURATED_TEST"] == "1"))
     func fetchesLiveCuratedFeeds() async {
         var failures: [String] = []
@@ -76,5 +90,26 @@ struct CuratedSourceCatalogTests {
             }
         }
         #expect(failures.isEmpty, "真实来源失败：\(failures.joined(separator: "；"))")
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TRACKAI_LIVE_MAGAZINE_TEST"] == "1"))
+    func fetchesLiveMagazineFeeds() async {
+        var failures: [String] = []
+        await withTaskGroup(of: (String, String?).self) { group in
+            for preset in CuratedSourcePreset.magazineSources {
+                group.addTask {
+                    do {
+                        let events = try await FeedClient().fetch(preset.trackedSource())
+                        return (preset.name, events.first?.title == nil ? "返回 0 条" : nil)
+                    } catch {
+                        return (preset.name, error.localizedDescription)
+                    }
+                }
+            }
+            for await (name, failure) in group where failure != nil {
+                failures.append("\(name)：\(failure!)")
+            }
+        }
+        #expect(failures.isEmpty, "真实杂志来源失败：\(failures.joined(separator: "；"))")
     }
 }

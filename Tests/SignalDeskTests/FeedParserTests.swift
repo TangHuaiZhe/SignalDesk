@@ -76,6 +76,36 @@ struct FeedParserTests {
         #expect(ImportanceScorer.category(text: "filing", kind: .sec13F) == .holding)
     }
 
+    @Test func sortsSignalEventsByImportanceAndUpdatedAt() {
+        let olderHighValue = SignalEvent(
+            id: "older-high-value",
+            sourceID: UUID(),
+            sourceName: "Test",
+            title: "Older",
+            summary: "",
+            url: nil,
+            publishedAt: Date(timeIntervalSince1970: 100),
+            category: .viewpoint,
+            importance: 90,
+            matchedTopics: []
+        )
+        let newerLowValue = SignalEvent(
+            id: "newer-low-value",
+            sourceID: UUID(),
+            sourceName: "Test",
+            title: "Newer",
+            summary: "",
+            url: nil,
+            publishedAt: Date(timeIntervalSince1970: 200),
+            category: .activity,
+            importance: 50,
+            matchedTopics: []
+        )
+
+        #expect(SignalSortOption.importance.sorted([newerLowValue, olderHighValue]).map(\.id) == ["older-high-value", "newer-low-value"])
+        #expect(SignalSortOption.updatedAt.sorted([olderHighValue, newerLowValue]).map(\.id) == ["newer-low-value", "older-high-value"])
+    }
+
     @Test func shortTopicUsesWordBoundaries() {
         #expect(ImportanceScorer.matchedTopics(in: "AI model", topics: ["AI"]) == ["AI"])
         #expect(ImportanceScorer.matchedTopics(in: "The speaker said hello", topics: ["AI"]).isEmpty)

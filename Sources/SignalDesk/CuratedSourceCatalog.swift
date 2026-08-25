@@ -141,6 +141,41 @@ extension CuratedSourcePreset {
         )
     ]
 
+    static let magazineSources: [CuratedSourcePreset] = [
+        CuratedSourcePreset(
+            id: "english-magazine-economist",
+            name: "The Economist",
+            role: "追踪 awesome-english-ebooks 的《经济学人》最新期号更新",
+            topics: ["The Economist", "economist", "magazine", "杂志", "经济学人"],
+            feedURL: githubCommitFeed(path: "01_economist"),
+            channel: .magazines
+        ),
+        CuratedSourcePreset(
+            id: "english-magazine-new-yorker",
+            name: "The New Yorker",
+            role: "追踪 awesome-english-ebooks 的《纽约客》最新期号更新",
+            topics: ["The New Yorker", "new yorker", "magazine", "杂志", "纽约客"],
+            feedURL: githubCommitFeed(path: "02_new_yorker"),
+            channel: .magazines
+        ),
+        CuratedSourcePreset(
+            id: "english-magazine-atlantic",
+            name: "The Atlantic",
+            role: "追踪 awesome-english-ebooks 的 The Atlantic 最新期号更新",
+            topics: ["The Atlantic", "atlantic", "magazine", "杂志"],
+            feedURL: githubCommitFeed(path: "04_atlantic"),
+            channel: .magazines
+        ),
+        CuratedSourcePreset(
+            id: "english-magazine-wired",
+            name: "Wired",
+            role: "追踪 awesome-english-ebooks 的 Wired 最新期号更新",
+            topics: ["Wired", "magazine", "杂志", "科技杂志"],
+            feedURL: githubCommitFeed(path: "05_wired"),
+            channel: .magazines
+        )
+    ]
+
     private static func googleNewsFeed(query: String) -> String {
         var components = URLComponents()
         components.scheme = "https"
@@ -153,5 +188,9 @@ extension CuratedSourcePreset {
             URLQueryItem(name: "ceid", value: "US:en")
         ]
         return components.url!.absoluteString
+    }
+
+    private static func githubCommitFeed(path: String) -> String {
+        "https://github.com/hehonghui/awesome-english-ebooks/commits/master/\(path).atom"
     }
 }

@@ -24,6 +24,7 @@ final class SignalStore: ObservableObject {
     private static let domainTaxonomyID = "signal-domains-v3"
     private static let researchSourcesCatalogID = "research-sources-v1"
     private static let chinaEconomySourcesCatalogID = "china-economy-sources-v1"
+    private static let magazineSourcesCatalogID = "english-magazine-sources-v1"
 
     init(
         stateURL: URL? = nil,
@@ -39,6 +40,7 @@ final class SignalStore: ObservableObject {
         installRayDalioIfNeeded()
         installResearchSourcesIfNeeded()
         installChinaEconomySourcesIfNeeded()
+        installMagazineSourcesIfNeeded()
         installDomainTaxonomyIfNeeded()
     }
 
@@ -391,11 +393,16 @@ final class SignalStore: ObservableObject {
 
         let content = UNMutableNotificationContent()
         content.title = "SignalDesk 捕捉到高价值信号"
-        content.body = newEvents.count == 1
-            ? newEvents[0].title
-            : "\(newEvents[0].title) 等 \(newEvents.count) 条"
+        content.body = Self.notificationBody(for: newEvents)
         content.sound = .default
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    static func notificationBody(for events: [SignalEvent]) -> String {
+        let latestEvent = events.max { $0.publishedAt < $1.publishedAt } ?? events[0]
+        return events.count == 1
+            ? latestEvent.title
+            : "\(latestEvent.title) 等 \(events.count) 条"
     }
 
     private static func welcomeEvents(for sources: [TrackedSource]) -> [SignalEvent] {
@@ -564,6 +571,22 @@ final class SignalStore: ObservableObject {
         }
         if added > 0 {
             statusMessage = "已新增 \(added) 个海外看中国来源"
+        }
+        save()
+    }
+
+    private func installMagazineSourcesIfNeeded() {
+        guard installedCatalogIDs.insert(Self.magazineSourcesCatalogID).inserted else { return }
+
+        var keys = Set(sources.map(Self.sourceKey))
+        var added = 0
+        for source in CuratedSourcePreset.magazineSources.map({ $0.trackedSource() }) {
+            guard keys.insert(Self.sourceKey(source)).inserted else { continue }
+            sources.append(source)
+            added += 1
+        }
+        if added > 0 {
+            statusMessage = "已新增 \(added) 个英语杂志来源"
         }
         save()
     }

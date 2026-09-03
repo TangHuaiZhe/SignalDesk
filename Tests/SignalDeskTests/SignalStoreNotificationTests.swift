@@ -4,14 +4,17 @@ import Testing
 
 struct SignalStoreNotificationTests {
     @Test @MainActor
-    func notificationUsesLatestPublishedEvent() {
+    func notificationUsesOnlyLatestTriggeringEvent() throws {
         let sourceID = UUID()
         let older = event(id: "older", title: "最早的通知", publishedAt: 100, sourceID: sourceID)
         let newer = event(id: "newer", title: "最新的通知", publishedAt: 200, sourceID: sourceID)
 
-        let notification = SignalStore.notificationContent(for: [older, newer])
+        let triggeringEvent = try #require(SignalStore.triggeringNotificationEvent(in: [older, newer]))
+        #expect(triggeringEvent.id == newer.id)
+
+        let notification = SignalStore.notificationContent(for: triggeringEvent)
         #expect(notification.title == "最新的通知")
-        #expect(notification.body == "最新消息内容 等 2 条")
+        #expect(notification.body == "最新消息内容")
     }
 
     private func event(id: String, title: String, publishedAt: TimeInterval, sourceID: UUID) -> SignalEvent {

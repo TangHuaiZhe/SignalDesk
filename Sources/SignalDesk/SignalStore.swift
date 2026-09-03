@@ -25,6 +25,7 @@ final class SignalStore: ObservableObject {
     private static let researchSourcesCatalogID = "research-sources-v1"
     private static let chinaEconomySourcesCatalogID = "china-economy-sources-v1"
     private static let magazineSourcesCatalogID = "english-magazine-sources-v1"
+    private static let latestSignalNotificationID = "SignalDesk.latestHighValueSignal"
 
     init(
         stateURL: URL? = nil,
@@ -386,27 +387,41 @@ final class SignalStore: ObservableObject {
     }
 
     private func notify(for newEvents: [SignalEvent]) async {
-        guard !newEvents.isEmpty else { return }
+        guard let triggeringEvent = Self.triggeringNotificationEvent(in: newEvents) else { return }
         let center = UNUserNotificationCenter.current()
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
         guard granted else { return }
 
-        let notification = Self.notificationContent(for: newEvents)
+        center.removePendingNotificationRequests(withIdentifiers: [Self.latestSignalNotificationID])
+        let staleNotificationIDs = await center.deliveredNotifications()
+            .filter {
+                $0.request.identifier == Self.latestSignalNotificationID ||
+                $0.request.content.title == "SignalDesk 捕捉到高价值信号"
+            }
+            .map(\.request.identifier)
+        center.removeDeliveredNotifications(withIdentifiers: staleNotificationIDs)
+
+        let notification = Self.notificationContent(for: triggeringEvent)
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
         content.sound = .default
-        try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        try? await center.add(
+            UNNotificationRequest(
+                identifier: Self.latestSignalNotificationID,
+                content: content,
+                trigger: nil
+            )
+        )
     }
 
-    static func notificationContent(for events: [SignalEvent]) -> (title: String, body: String) {
-        let latestEvent = events.max { $0.publishedAt < $1.publishedAt } ?? events[0]
-        let summary = latestEvent.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = summary.isEmpty ? latestEvent.title : summary
-        return (
-            title: latestEvent.title,
-            body: events.count == 1 ? body : "\(body) 等 \(events.count) 条"
-        )
+    static func triggeringNotificationEvent(in events: [SignalEvent]) -> SignalEvent? {
+        events.max { $0.publishedAt < $1.publishedAt }
+    }
+
+    static func notificationContent(for event: SignalEvent) -> (title: String, body: String) {
+        let summary = event.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (title: event.title, body: summary.isEmpty ? event.title : summary)
     }
 
     private static func welcomeEvents(for sources: [TrackedSource]) -> [SignalEvent] {

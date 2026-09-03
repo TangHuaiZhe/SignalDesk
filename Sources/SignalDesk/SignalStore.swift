@@ -342,6 +342,14 @@ final class SignalStore: ObservableObject {
         await notify(for: result.addedEvents.filter { $0.importance >= 80 })
     }
 
+    func clearLegacySignalNotifications() async {
+        let center = UNUserNotificationCenter.current()
+        let legacyNotificationIDs = await center.deliveredNotifications()
+            .filter { $0.request.content.title == "SignalDesk 捕捉到高价值信号" }
+            .map(\.request.identifier)
+        center.removeDeliveredNotifications(withIdentifiers: legacyNotificationIDs)
+    }
+
     private func load() {
         do {
             let snapshot = try persistence.load()

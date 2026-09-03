@@ -71,6 +71,7 @@ struct ContentView: View {
             selectedSourceGroupKey = nil
         }
         .task {
+            await store.clearLegacySignalNotifications()
             await store.refresh()
             await qdiiQuotaStore.refreshIfStale()
             await store.generateDailyBriefIfNeeded()

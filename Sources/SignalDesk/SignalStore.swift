@@ -391,18 +391,22 @@ final class SignalStore: ObservableObject {
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
         guard granted else { return }
 
+        let notification = Self.notificationContent(for: newEvents)
         let content = UNMutableNotificationContent()
-        content.title = "SignalDesk 捕捉到高价值信号"
-        content.body = Self.notificationBody(for: newEvents)
+        content.title = notification.title
+        content.body = notification.body
         content.sound = .default
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
-    static func notificationBody(for events: [SignalEvent]) -> String {
+    static func notificationContent(for events: [SignalEvent]) -> (title: String, body: String) {
         let latestEvent = events.max { $0.publishedAt < $1.publishedAt } ?? events[0]
-        return events.count == 1
-            ? latestEvent.title
-            : "\(latestEvent.title) 等 \(events.count) 条"
+        let summary = latestEvent.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = summary.isEmpty ? latestEvent.title : summary
+        return (
+            title: latestEvent.title,
+            body: events.count == 1 ? body : "\(body) 等 \(events.count) 条"
+        )
     }
 
     private static func welcomeEvents(for sources: [TrackedSource]) -> [SignalEvent] {

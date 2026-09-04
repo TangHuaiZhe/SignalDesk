@@ -345,7 +345,10 @@ final class SignalStore: ObservableObject {
     func clearLegacySignalNotifications() async {
         let center = UNUserNotificationCenter.current()
         let legacyNotificationIDs = await center.deliveredNotifications()
-            .filter { $0.request.content.title == "SignalDesk 捕捉到高价值信号" }
+            .filter {
+                $0.request.identifier == Self.latestSignalNotificationID ||
+                $0.request.content.title == "SignalDesk 捕捉到高价值信号"
+            }
             .map(\.request.identifier)
         center.removeDeliveredNotifications(withIdentifiers: legacyNotificationIDs)
     }

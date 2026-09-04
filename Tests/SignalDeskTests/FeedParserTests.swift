@@ -121,6 +121,17 @@ struct FeedParserTests {
         #expect(!MediaClassifier.matchesPerson(title: "Bill Gates keynote at AI Summit", aliases: ["Yann LeCun"]))
     }
 
+    @Test func chinaEconomyRelevanceRequiresChinaRelatedPlaceOrTerm() {
+        #expect(ChinaEconomyRelevance.matches(title: "China growth slows", summary: "Economic data released today"))
+        #expect(ChinaEconomyRelevance.matches(title: "Hong Kong markets rally", summary: "Stocks gained"))
+        #expect(ChinaEconomyRelevance.matches(title: "上海制造业调查", summary: "企业活动回升"))
+        #expect(!ChinaEconomyRelevance.matches(
+            title: "Argentina to sanction oil firms as Falklands dispute with UK heats up",
+            summary: "Javier Milei reiterates Argentina's claim to the islands"
+        ))
+        #expect(!ChinaEconomyRelevance.matches(title: "Global oil prices rise", summary: "Markets react to supply concerns"))
+    }
+
     @Test func classifiesCanonicalDomainsWithoutGenericTechnologyBucket() {
         let domains = SignalDomainClassifier.classify(
             text: "A foundation model agent runs on GPUs and controls a humanoid robot after new funding"

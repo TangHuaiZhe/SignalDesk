@@ -80,6 +80,11 @@ struct FeedClient {
                 MediaClassifier.matchesPerson(title: $0.title, aliases: requiredTitleTerms)
             }
         }
+        if source.channel == .chinaEconomy {
+            parsedItems = parsedItems.filter {
+                ChinaEconomyRelevance.matches(title: $0.title, summary: $0.summary)
+            }
+        }
         let items = parsedItems
             .sorted { $0.publishedAt > $1.publishedAt }
             .prefix(itemLimit)
@@ -109,6 +114,27 @@ struct FeedClient {
                     kind: source.sourceKind
                 )
             )
+        }
+    }
+}
+
+enum ChinaEconomyRelevance {
+    private static let terms = [
+        "china", "chinese", "hong kong", "beijing", "shanghai", "shenzhen", "guangzhou",
+        "中国", "香港", "北京", "上海", "深圳", "广州"
+    ]
+
+    static func matches(title: String, summary: String) -> Bool {
+        let text = "\(title) \(summary)".lowercased()
+        return terms.contains { term in
+            if term.unicodeScalars.allSatisfy({ !$0.isASCII }) || term.contains(" ") {
+                return text.contains(term)
+            }
+            let escaped = NSRegularExpression.escapedPattern(for: term)
+            return text.range(
+                of: "(?<![a-z0-9])\(escaped)(?![a-z0-9])",
+                options: .regularExpression
+            ) != nil
         }
     }
 }

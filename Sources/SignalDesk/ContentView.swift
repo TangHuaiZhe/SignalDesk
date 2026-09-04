@@ -497,6 +497,7 @@ struct ContentView: View {
                     (selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID))
             case .chinaEconomy:
                 sectionMatches = chinaEconomySourceIDs.contains(event.sourceID) &&
+                    ChinaEconomyRelevance.matches(title: event.title, summary: event.summary) &&
                     (selectedSourceGroupKey == nil || selectedSourceGroupKey == sourceGroupKey(for: event.sourceID))
             case .magazines:
                 sectionMatches = magazineSourceIDs.contains(event.sourceID) &&

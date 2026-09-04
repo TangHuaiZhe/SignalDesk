@@ -15,6 +15,15 @@ struct SignalStoreNotificationTests {
         let notification = SignalStore.notificationContent(for: triggeringEvent)
         #expect(notification.title == "最新的通知")
         #expect(notification.body == "最新消息内容")
+
+        let userInfo = SignalStore.notificationUserInfo(for: triggeringEvent)
+        #expect(SignalStore.notificationEventID(from: userInfo) == newer.id)
+    }
+
+    @Test @MainActor
+    func notificationEventIDRejectsMissingOrInvalidMetadata() {
+        #expect(SignalStore.notificationEventID(from: [:]) == nil)
+        #expect(SignalStore.notificationEventID(from: [SignalStore.notificationEventIDKey: 42]) == nil)
     }
 
     private func event(id: String, title: String, publishedAt: TimeInterval, sourceID: UUID) -> SignalEvent {

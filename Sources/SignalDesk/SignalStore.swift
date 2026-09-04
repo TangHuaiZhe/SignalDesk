@@ -414,6 +414,7 @@ final class SignalStore: ObservableObject {
         content.title = notification.title
         content.body = notification.body
         content.sound = .default
+        content.userInfo = Self.notificationUserInfo(for: triggeringEvent)
         try? await center.add(
             UNNotificationRequest(
                 identifier: Self.latestSignalNotificationID,
@@ -430,6 +431,16 @@ final class SignalStore: ObservableObject {
     static func notificationContent(for event: SignalEvent) -> (title: String, body: String) {
         let summary = event.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         return (title: event.title, body: summary.isEmpty ? event.title : summary)
+    }
+
+    nonisolated static let notificationEventIDKey = "signalEventID"
+
+    nonisolated static func notificationUserInfo(for event: SignalEvent) -> [AnyHashable: Any] {
+        [notificationEventIDKey: event.id]
+    }
+
+    nonisolated static func notificationEventID(from userInfo: [AnyHashable: Any]) -> String? {
+        userInfo[notificationEventIDKey] as? String
     }
 
     private static func welcomeEvents(for sources: [TrackedSource]) -> [SignalEvent] {

@@ -1,7 +1,48 @@
 import SwiftUI
+import UserNotifications
+
+@MainActor
+final class SignalNotificationRouter: ObservableObject {
+    static let shared = SignalNotificationRouter()
+
+    @Published private(set) var pendingEventID: String?
+
+    private init() {}
+
+    func open(eventID: String) {
+        pendingEventID = eventID
+    }
+
+    func clear(eventID: String) {
+        guard pendingEventID == eventID else { return }
+        pendingEventID = nil
+    }
+}
+
+final class SignalDeskAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let eventID = SignalStore.notificationEventID(from: response.notification.request.content.userInfo)
+        Task { @MainActor in
+            if let eventID {
+                SignalNotificationRouter.shared.open(eventID: eventID)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            completionHandler()
+        }
+    }
+}
 
 @main
 struct SignalDeskApp: App {
+    @NSApplicationDelegateAdaptor(SignalDeskAppDelegate.self) private var appDelegate
     @StateObject private var store = SignalStore()
     @StateObject private var investorStore = InvestorHoldingsStore()
     @StateObject private var investorWritingStore = InvestorWritingStore()

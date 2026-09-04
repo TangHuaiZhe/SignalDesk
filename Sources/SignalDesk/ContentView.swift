@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var investorStore: InvestorHoldingsStore
     @EnvironmentObject private var qdiiQuotaStore: QDIIQuotaStore
     @Environment(\.openURL) private var openURL
+    @ObservedObject private var notificationRouter = SignalNotificationRouter.shared
     @State private var section: AppSection? = .longForm
     @State private var selection: String?
     @State private var showingAddSource = false
@@ -70,6 +71,9 @@ struct ContentView: View {
             selectedTopic = nil
             selectedSourceGroupKey = nil
         }
+        .onReceive(notificationRouter.$pendingEventID.compactMap { $0 }) { eventID in
+            openNotificationEvent(eventID)
+        }
         .task {
             await store.clearLegacySignalNotifications()
             await store.refresh()
@@ -99,6 +103,20 @@ struct ContentView: View {
             return max(60, min(900, todayAtEight.timeIntervalSince(now)))
         }
         return 900
+    }
+
+    private func openNotificationEvent(_ eventID: String) {
+        defer { notificationRouter.clear(eventID: eventID) }
+        guard store.events.contains(where: { $0.id == eventID }) else { return }
+
+        section = .highValue
+        selection = eventID
+        query = ""
+        category = nil
+        selectedTopic = nil
+        selectedSourceGroupKey = nil
+        selectedStockID = nil
+        selectedQDIIID = nil
     }
 
     private var sidebar: some View {

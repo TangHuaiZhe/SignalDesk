@@ -528,7 +528,7 @@ struct ContentView: View {
         case .xFeed:
             activeSourceCount = store.sources.filter { $0.sourceKind == .x && $0.isEnabled }.count
         case .longForm:
-            activeSourceCount = store.sources.filter { $0.sourceKind != .x && $0.isEnabled }.count
+            activeSourceCount = store.sources.filter { isLongFormSource($0) && $0.isEnabled }.count
         case .chinaEconomy:
             activeSourceCount = store.sources.filter { $0.channel == .chinaEconomy && $0.isEnabled }.count
         case .magazines:
@@ -547,7 +547,11 @@ struct ContentView: View {
     }
 
     private var longFormSourceIDs: Set<UUID> {
-        Set(store.sources.filter { $0.sourceKind != .x }.map(\.id))
+        Set(store.sources.filter(isLongFormSource).map(\.id))
+    }
+
+    private func isLongFormSource(_ source: TrackedSource) -> Bool {
+        source.sourceKind != .x && source.channel == nil
     }
 
     private var chinaEconomySourceIDs: Set<UUID> {
@@ -575,7 +579,7 @@ struct ContentView: View {
         case .xFeed:
             filteredSources = store.sources.filter { $0.sourceKind == .x }
         case .longForm:
-            filteredSources = store.sources.filter { $0.sourceKind != .x }
+            filteredSources = store.sources.filter(isLongFormSource)
         case .chinaEconomy:
             filteredSources = store.sources.filter { $0.channel == .chinaEconomy }
         case .magazines:
